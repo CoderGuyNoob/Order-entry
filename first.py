@@ -3,9 +3,12 @@ import csv
 import datetime
 from typing import Literal
 from rich.progress import track
+from rich.console import Console
+from rich.table import Table
 import time
 
 app = typer.Typer()
+console = Console()
 orders_file = "orders.csv"
 fieldnames = ["customer", "size", "order_time", "password"]
 
@@ -44,8 +47,8 @@ def create(
     current = datetime.datetime.now()
     current_time = f"{current:%H:%M}"
 
-    print(f"Hello {customer}")
-    for _ in track(range(100)):
+    console.print(f"[bold green]Hello {customer}![/bold green]")
+    for _ in track(range(100), description="Processing order..."):
         time.sleep(0.001)
 
     write_order(
@@ -56,7 +59,7 @@ def create(
             "password": password
         }
     )
-    print(f"✅ Order for {customer} created!")
+    console.print(f"[bold green]✅ Order for {customer} created![/bold green]")
 
 
 @app.command()
@@ -66,7 +69,7 @@ def cancel(customer: str, password: str):
     customer_orders = [o for o in orders if o["customer"] == customer]
 
     if not customer_orders:
-        print(f"No orders found for {customer}.")
+        console.print(f"[bold red]No orders found for {customer}.[/bold red]")
         raise typer.Exit()
 
     # Cancel the first order that matches either the order's password or the admin password
@@ -76,7 +79,7 @@ def cancel(customer: str, password: str):
     )
 
     if not order_to_cancel:
-        print("❌ No order matches the provided password!")
+        console.print("[bold red]❌ No order matches the provided password![/bold red]")
         raise typer.Exit()
 
     # Remove the order
@@ -87,9 +90,9 @@ def cancel(customer: str, password: str):
         writer.writerows(remaining)
 
     if password == ADMIN_PASSWORD:
-        print(f"✅ Order for {customer} deleted by admin!")
+        console.print(f"[bold yellow]✅ Order for {customer} deleted by admin![/bold yellow]")
     else:
-        print(f"✅ Order for {customer} cancelled!")
+        console.print(f"[bold green]✅ Order for {customer} cancelled![/bold green]")
 
 
 @app.command()
@@ -97,21 +100,29 @@ def print_orders(admin_password: str = typer.Argument(None)):
     """Print all orders. Optionally provide admin password to see order passwords."""
     orders = read_orders()
     if not orders:
-        print("No orders found.")
+        console.print("[bold red]No orders found.[/bold red]")
         return
 
     show_passwords = False
     if admin_password == ADMIN_PASSWORD:
         show_passwords = True
     elif admin_password is not None:
-        print("❌ Incorrect admin password! Showing orders without passwords.")
+        console.print("[bold red]❌ Incorrect admin password! Showing orders without passwords.[/bold red]")
 
-    print("All orders:")
+    table = Table(title="All Orders")
+    table.add_column("Customer", style="cyan", no_wrap=True)
+    table.add_column("Size", style="magenta")
+    table.add_column("Order Time", style="green")
+    if show_passwords:
+        table.add_column("Password", style="yellow")
+
     for order in orders:
         if show_passwords:
-            print(f"{order['customer']} | {order['size']} | {order['order_time']} | {order['password']}")
+            table.add_row(order['customer'], order['size'], order['order_time'], order['password'])
         else:
-            print(f"{order['customer']} | {order['size']} | {order['order_time']}")
+            table.add_row(order['customer'], order['size'], order['order_time'])
+
+    console.print(table)
 
 
 # ============================================================================
