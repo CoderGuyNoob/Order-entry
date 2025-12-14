@@ -66,24 +66,36 @@ def create(
 def cancel(customer: str, password: str):
     """Cancel an order by customer name and password (order password or admin password)."""
     orders = read_orders()
-    customer_orders = [o for o in orders if o["customer"] == customer]
+    customer_orders = [(i, o) for i, o in enumerate(orders) if o["customer"] == customer]
 
     if not customer_orders:
         console.print(f"[bold red]No orders found for {customer}.[/bold red]")
         raise typer.Exit()
 
-    # Cancel the first order that matches either the order's password or the admin password
-    order_to_cancel = next(
-        (o for o in customer_orders if o.get("password") == password or password == ADMIN_PASSWORD),
-        None
-    )
+    # Filter orders matching the password or admin password
+    matching_orders = [(idx, o) for idx, o in customer_orders if o.get("password") == password or password == ADMIN_PASSWORD]
 
-    if not order_to_cancel:
+    if not matching_orders:
         console.print("[bold red]❌ No order matches the provided password![/bold red]")
         raise typer.Exit()
 
-    # Remove the order
-    remaining = [o for o in orders if o != order_to_cancel]
+    # If multiple matching orders, prompt user to select
+    if len(matching_orders) > 1 and password != ADMIN_PASSWORD:
+        console.print("[bold yellow]Multiple matching orders found:[/bold yellow]")
+        for display_idx, (idx, order) in enumerate(matching_orders, start=1):
+            console.print(f"{display_idx}: Size: {order['size']}, Time: {order['order_time']}")
+        choice = typer.prompt("Enter the number of the order you want to cancel")
+        try:
+            selected_display_idx = int(choice) - 1
+            order_idx, order_to_cancel = matching_orders[selected_display_idx]
+        except (ValueError, IndexError):
+            console.print("[bold red]Invalid selection. Exiting.[/bold red]")
+            raise typer.Exit()
+    else:
+        order_idx, order_to_cancel = matching_orders[0]
+
+    # Remove only the selected order using its index
+    remaining = [o for i, o in enumerate(orders) if i != order_idx]
     with open(orders_file, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
