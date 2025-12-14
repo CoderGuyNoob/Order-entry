@@ -1,11 +1,6 @@
 import typer
 import csv
 import datetime
-from typing import Literal
-from rich.progress import track
-from rich.console import Console
-import csv
-import datetime
 import time
 from typing import Literal
 
@@ -147,23 +142,6 @@ def print_orders(admin_password: str = typer.Argument(None)) -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    app()
-    table.add_column("Order Time", style="green")
-    if show_passwords:
-        table.add_column("Password", style="yellow")
-
-    for order in orders:
-        if show_passwords:
-            table.add_row(order['customer'], order['size'], order['order_time'], order['password'])
-        else:
-            table.add_row(order['customer'], order['size'], order['order_time'])
-
-    console.print(table)
-
-
-# ============================================================================
 
 if __name__ == "__main__":
     app()
