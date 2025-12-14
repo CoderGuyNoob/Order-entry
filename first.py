@@ -6,140 +6,175 @@ from typing import Literal
 import typer
 from rich.progress import track
 
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
 app = typer.Typer()
-orders_file = "orders.csv"
-fieldnames = ["customer", "size", "order_time", "password"]
-
-# Admin password for printing and deleting orders
-ADMIN_PASSWORD = "ADMIN092111"
-
 
 # ---------------------------------------------------------------------------
-# Persistence helpers
+# Files
 # ---------------------------------------------------------------------------
 
-def write_order(data: dict) -> None:
-    """Append an order to the CSV file, writing a header when creating the file."""
-    with open(orders_file, "a", newline="") as f:
-        csvwriter = csv.DictWriter(f, fieldnames=fieldnames)
-        if f.tell() == 0:
-            csvwriter.writeheader()
-        csvwriter.writerow(data)
+ACCOUNTS_FILE = "accounts.csv"
+ORDERS_FILE = "orders.csv"
 
+ACCOUNT_FIELDS = ["username", "password", "status"]
+ORDER_FIELDS = ["username", "size", "order_time"]
 
-def read_orders() -> list[dict]:
-    """Read all orders from the CSV and return a list of cleaned dicts.
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    Keys and values are stripped of surrounding whitespace to be robust
-    against malformed CSV headers or user edits.
-    """
+def read_csv(path: str) -> list[dict]:
     try:
-        with open(orders_file, newline="") as f:
-            reader = csv.DictReader(f)
-            orders: list[dict] = []
-            for row in reader:
-                clean_row = {k.strip(): (v.strip() if v is not None else "") for k, v in row.items() if k is not None}
-                orders.append(clean_row)
-            return orders
+        with open(path, newline="") as f:
+            return list(csv.DictReader(f))
     except FileNotFoundError:
         return []
 
 
+def write_csv(path: str, fields: list[str], rows: list[dict]) -> None:
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def append_csv(path: str, fields: list[str], row: dict) -> None:
+    exists = bool(read_csv(path))
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        if not exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def authenticate(username: str, password: str) -> dict:
+    accounts = read_csv(ACCOUNTS_FILE)
+    for acc in accounts:
+        if acc["username"] == username and acc["password"] == password:
+            return acc
+    typer.echo("❌ Invalid username or password")
+    raise typer.Exit()
+
+
 # ---------------------------------------------------------------------------
-# CLI Commands
+# Account Commands
 # ---------------------------------------------------------------------------
 
+@app.command()
+def create_account(
+    username: str,
+    password: str,
+    status: Literal["USER", "ADMIN"] = "USER",
+):
+    """Create a new account."""
+    accounts = read_csv(ACCOUNTS_FILE)
+
+    if any(a["username"] == username for a in accounts):
+        typer.echo("❌ Account already exists")
+        raise typer.Exit()
+
+    append_csv(
+        ACCOUNTS_FILE,
+        ACCOUNT_FIELDS,
+        {"username": username, "password": password, "status": status},
+    )
+    typer.echo(f"✅ Account '{username}' created ({status})")
+
+
+@app.command()
+def delete_account(
+    admin_user: str,
+    admin_pass: str,
+    username: str,
+):
+    """Delete an account (ADMIN only)."""
+    admin = authenticate(admin_user, admin_pass)
+
+    if admin["status"] != "ADMIN":
+        typer.echo("❌ Admin privileges required")
+        raise typer.Exit()
+
+    accounts = read_csv(ACCOUNTS_FILE)
+    accounts = [a for a in accounts if a["username"] != username]
+    write_csv(ACCOUNTS_FILE, ACCOUNT_FIELDS, accounts)
+
+    typer.echo(f"✅ Account '{username}' deleted")
+
+
+# ---------------------------------------------------------------------------
+# Order Commands
+# ---------------------------------------------------------------------------
 
 @app.command(no_args_is_help=True)
-def create(
-    customer: str,
+def order(
+    username: str,
     password: str,
     size: Literal["small", "medium", "large"] = "medium",
-) -> None:
-    """Create a new order and save it to the CSV.
+):
+    """Place an order."""
+    authenticate(username, password)
 
-    Args:
-        customer: Customer name
-        password: Order password used for cancellations
-        size: Pizza size
-    """
-    current = datetime.datetime.now()
-    current_time = f"{current:%H:%M}"
+    now = datetime.datetime.now().strftime("%H:%M")
+    typer.echo(f"Placing order for {username}")
 
-    print(f"Hello {customer}")
     for _ in track(range(100)):
-        time.sleep(0.001)
+        time.sleep(0.005)
 
-    write_order(
-        data={
-            "customer": customer,
-            "size": size,
-            "order_time": current_time,
-            "password": password,
-        }
+    append_csv(
+        ORDERS_FILE,
+        ORDER_FIELDS,
+        {"username": username, "size": size, "order_time": now},
     )
-    print(f"✅ Order for {customer} created!")
+
+    typer.echo("✅ Order placed!")
 
 
 @app.command()
-def cancel(customer: str, password: str) -> None:
-    """Cancel an order by matching customer and password (or admin password)."""
-    orders = read_orders()
-    customer_orders = [o for o in orders if o.get("customer") == customer]
+def cancel(
+    username: str,
+    password: str,
+):
+    """Cancel one of your orders."""
+    account = authenticate(username, password)
+    orders = read_csv(ORDERS_FILE)
 
-    if not customer_orders:
-        print(f"No orders found for {customer}.")
+    user_orders = [(i, o) for i, o in enumerate(orders) if o["username"] == username]
+
+    if not user_orders:
+        typer.echo("❌ No orders found")
         raise typer.Exit()
 
-    # Find the first matching order by password or allow admin override
-    order_to_cancel = next(
-        (o for o in customer_orders if o.get("password") == password or password == ADMIN_PASSWORD),
-        None,
-    )
+    typer.echo("Your orders:")
+    for i, (_, o) in enumerate(user_orders, start=1):
+        typer.echo(f"{i}. {o['size']} @ {o['order_time']}")
 
-    if not order_to_cancel:
-        print("❌ No order matches the provided password!")
-        raise typer.Exit()
+    choice = typer.prompt("Which order to cancel", type=int)
+    idx = user_orders[choice - 1][0]
 
-    remaining = [o for o in orders if o != order_to_cancel]
-    with open(orders_file, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(remaining)
+    del orders[idx]
+    write_csv(ORDERS_FILE, ORDER_FIELDS, orders)
 
-    if password == ADMIN_PASSWORD:
-        print(f"✅ Order for {customer} deleted by admin!")
+    typer.echo("✅ Order cancelled")
+
+
+@app.command()
+def print_orders(username: str, password: str):
+    """View orders (ADMIN sees all)."""
+    account = authenticate(username, password)
+    orders = read_csv(ORDERS_FILE)
+
+    if account["status"] == "ADMIN":
+        typer.echo("All orders:")
+        for o in orders:
+            typer.echo(f"{o['username']} | {o['size']} | {o['order_time']}")
     else:
-        print(f"✅ Order for {customer} cancelled!")
-
-
-@app.command()
-def print_orders(admin_password: str = typer.Argument(None)) -> None:
-    """Display stored orders. Providing the admin password shows order passwords."""
-    orders = read_orders()
-    if not orders:
-        print("No orders found.")
-        return
-
-    show_passwords = admin_password == ADMIN_PASSWORD
-    if admin_password is not None and not show_passwords:
-        print("❌ Incorrect admin password! Showing orders without passwords.")
-
-    print("All orders:")
-    for order in orders:
-        if show_passwords:
-            print(f"{order.get('customer','')} | {order.get('size','')} | {order.get('order_time','')} | {order.get('password','')}")
-        else:
-            print(f"{order.get('customer','')} | {order.get('size','')} | {order.get('order_time','')}")
+        typer.echo("Your orders:")
+        for o in orders:
+            if o["username"] == username:
+                typer.echo(f"{o['size']} | {o['order_time']}")
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
