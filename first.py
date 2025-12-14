@@ -1,4 +1,3 @@
-import typer
 import csv
 import datetime
 import time
