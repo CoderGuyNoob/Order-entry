@@ -3,7 +3,7 @@ import datetime
 import uuid
 import typer
 from typing import Literal
-
+print("hi")
 app = typer.Typer()
 
 ACCOUNTS_FILE = "accounts.csv"
