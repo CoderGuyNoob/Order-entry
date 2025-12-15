@@ -1,4 +1,4 @@
-#!/workspaces/a/.venv/bin/python3
+#!/home/runner/workspace/.venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
