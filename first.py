@@ -5,7 +5,6 @@ import typer
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-print(datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M"))
 app = typer.Typer()
 
 ACCOUNTS_FILE = "accounts.csv"
