@@ -3,7 +3,9 @@ import datetime
 import uuid
 import typer
 from typing import Literal
-print("hi")
+from zoneinfo import ZoneInfo
+
+print(datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M"))
 app = typer.Typer()
 
 ACCOUNTS_FILE = "accounts.csv"
@@ -141,7 +143,7 @@ def order(
         "id": str(uuid.uuid4())[:8],
         "username": username,
         "size": size,
-        "order_time": datetime.datetime.now().strftime("%H:%M"),
+        "order_time": datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M"),
     })
 
     write_csv(ORDERS_FILE, ORDER_FIELDS, orders)
