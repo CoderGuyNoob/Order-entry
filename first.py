@@ -18,7 +18,8 @@ ORDERS_FILE = "orders.csv"
 ACCOUNT_FIELDS = ["username", "password", "status"]
 ORDER_FIELDS = ["id", "username", "size", "toppings", "order_time", "order_delivery_time"]
 
-TOPPINGS = ["pepperoni", "mushrooms", "onions", "olives", "cheese"]
+# Allowed toppings
+ALLOWED_TOPPINGS = ["pepperoni", "mushrooms", "onions", "olives", "cheese"]
 
 # ------------------------------------------------------------------
 # Helpers
@@ -131,44 +132,36 @@ def order(
     username: str,
     password: str,
     size: Literal["small", "medium", "large"] = "medium",
-    toppings: str = typer.Option(
-        "",
+    toppings: list[str] = typer.Option(
+        [],
         "--toppings",
-        help="Comma-separated toppings (e.g. pepperoni,cheese)",
+        help=f"Repeatable toppings. Choose from: {', '.join(ALLOWED_TOPPINGS)}",
     ),
 ):
     """Place an order."""
     authenticate(username, password)
 
-    selected: list[str] = []
-
-    if toppings:
-        requested = [t.strip().lower() for t in toppings.split(",") if t.strip()]
-
-        for t in requested:
-            if t not in TOPPINGS:
-                typer.echo(f"❌ Invalid topping: {t}")
-                raise typer.Exit()
-            if t not in selected:
-                selected.append(t)
+    # Validate toppings
+    for t in toppings:
+        if t not in ALLOWED_TOPPINGS:
+            typer.echo(f"❌ Invalid topping: {t}")
+            raise typer.Exit()
 
     orders = read_csv(ORDERS_FILE)
+    now = datetime.datetime.now(ZoneInfo("America/New_York"))
 
     orders.append({
         "id": str(uuid.uuid4())[:8],
         "username": username,
         "size": size,
-        "toppings": ",".join(selected) if selected else "none",
-        "order_time": datetime.datetime.now(
-            ZoneInfo("America/New_York")
-        ).strftime("%H:%M"),
-        "order_delivery_time": (datetime.datetime.now(
-            ZoneInfo("America/New_York")
-        ) + timedelta(minutes=20)).strftime("%H:%M")
+        "toppings": ",".join(toppings) if toppings else "none",
+        "order_time": now.strftime("%H:%M"),
+        "order_delivery_time": (now + timedelta(minutes=20)).strftime("%H:%M")
     })
 
     write_csv(ORDERS_FILE, ORDER_FIELDS, orders)
-    typer.echo("✅ Order placed")
+    toppings_display = ", ".join(toppings) if toppings else "None"
+    typer.echo(f"✅ Order placed: {size} pizza with {toppings_display}")
 
 
 @app.command()
@@ -185,8 +178,12 @@ def cancel(username: str, password: str):
 
     typer.echo("Your orders:")
     for i, o in enumerate(owned, 1):
+        toppings_display = (
+            ", ".join(o["toppings"].split(",")) if o["toppings"] != "none" else "None"
+        )
         typer.echo(
-            f"{i}. {o['size']} | {o['toppings']} | {o['order_delivery_time']} | ID {o['id']}"
+            f"{i}. {o['size']} | Toppings: {toppings_display} | "
+            f"Delivery: {o['order_delivery_time']} | ID: {o['id']}"
         )
 
     choice = typer.prompt("Select order number", type=int)
@@ -217,8 +214,12 @@ def list_orders(username: str, password: str):
         return
 
     for o in visible:
+        toppings_display = (
+            ", ".join(o["toppings"].split(",")) if o["toppings"] != "none" else "None"
+        )
         typer.echo(
-            f"{o['username']} | {o['size']} | {o['toppings']} | {o['order_time']} | {o['id']}"
+            f"{o['username']} | {o['size']} | Toppings: {toppings_display} | "
+            f"Ordered: {o['order_time']} | Delivery: {o['order_delivery_time']} | ID: {o['id']}"
         )
 
 
