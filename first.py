@@ -4,6 +4,7 @@ import uuid
 import typer
 from typing import Literal
 from zoneinfo import ZoneInfo
+from datetime import timedelta
 
 app = typer.Typer()
 
@@ -15,7 +16,7 @@ ACCOUNTS_FILE = "accounts.csv"
 ORDERS_FILE = "orders.csv"
 
 ACCOUNT_FIELDS = ["username", "password", "status"]
-ORDER_FIELDS = ["id", "username", "size", "toppings", "order_time"]
+ORDER_FIELDS = ["id", "username", "size", "toppings", "order_time", "order_delivery_time"]
 
 TOPPINGS = ["pepperoni", "mushrooms", "onions", "olives", "cheese"]
 
@@ -161,6 +162,9 @@ def order(
         "order_time": datetime.datetime.now(
             ZoneInfo("America/New_York")
         ).strftime("%H:%M"),
+        "order_delivery_time": (datetime.datetime.now(
+            ZoneInfo("America/New_York")
+        ) + timedelta(minutes=20)).strftime("%H:%M")
     })
 
     write_csv(ORDERS_FILE, ORDER_FIELDS, orders)
@@ -182,7 +186,7 @@ def cancel(username: str, password: str):
     typer.echo("Your orders:")
     for i, o in enumerate(owned, 1):
         typer.echo(
-            f"{i}. {o['size']} | {o['toppings']} | {o['order_time']} | ID {o['id']}"
+            f"{i}. {o['size']} | {o['toppings']} | {o['order_delivery_time']} | ID {o['id']}"
         )
 
     choice = typer.prompt("Select order number", type=int)
