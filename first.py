@@ -7,11 +7,17 @@ from zoneinfo import ZoneInfo
 
 app = typer.Typer()
 
+# ------------------------------------------------------------------
+# Files & Fields
+# ------------------------------------------------------------------
+
 ACCOUNTS_FILE = "accounts.csv"
 ORDERS_FILE = "orders.csv"
 
 ACCOUNT_FIELDS = ["username", "password", "status"]
-ORDER_FIELDS = ["id", "username", "size", "order_time"]
+ORDER_FIELDS = ["id", "username", "size", "toppings", "order_time"]
+
+TOPPINGS = ["pepperoni", "mushrooms", "onions", "olives", "cheese"]
 
 # ------------------------------------------------------------------
 # Helpers
@@ -33,8 +39,7 @@ def write_csv(file: str, fields: list[str], rows: list[dict]) -> None:
 
 
 def authenticate(username: str, password: str) -> dict:
-    accounts = read_csv(ACCOUNTS_FILE)
-    for acc in accounts:
+    for acc in read_csv(ACCOUNTS_FILE):
         if acc["username"] == username and acc["password"] == password:
             return acc
     typer.echo("❌ Invalid credentials")
@@ -65,11 +70,7 @@ def create_account(username: str, password: str):
 
 
 @app.command()
-def delete_account(
-    username: str,
-    password: str,
-    target: str,
-):
+def delete_account(username: str, password: str, target: str):
     """Delete an account (ADMIN only unless deleting self)."""
     user = authenticate(username, password)
     accounts = read_csv(ACCOUNTS_FILE)
@@ -93,11 +94,7 @@ def delete_account(
 
 
 @app.command()
-def promote(
-    admin_user: str,
-    admin_pass: str,
-    target: str,
-):
+def promote(admin_user: str, admin_pass: str, target: str):
     """Promote a USER to ADMIN (ADMIN only)."""
     admin = authenticate(admin_user, admin_pass)
 
@@ -133,16 +130,37 @@ def order(
     username: str,
     password: str,
     size: Literal["small", "medium", "large"] = "medium",
+    toppings: str = typer.Option(
+        "",
+        "--toppings",
+        help="Comma-separated toppings (e.g. pepperoni,cheese)",
+    ),
 ):
     """Place an order."""
     authenticate(username, password)
 
+    selected: list[str] = []
+
+    if toppings:
+        requested = [t.strip().lower() for t in toppings.split(",") if t.strip()]
+
+        for t in requested:
+            if t not in TOPPINGS:
+                typer.echo(f"❌ Invalid topping: {t}")
+                raise typer.Exit()
+            if t not in selected:
+                selected.append(t)
+
     orders = read_csv(ORDERS_FILE)
+
     orders.append({
         "id": str(uuid.uuid4())[:8],
         "username": username,
         "size": size,
-        "order_time": datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M"),
+        "toppings": ",".join(selected) if selected else "none",
+        "order_time": datetime.datetime.now(
+            ZoneInfo("America/New_York")
+        ).strftime("%H:%M"),
     })
 
     write_csv(ORDERS_FILE, ORDER_FIELDS, orders)
@@ -150,12 +168,9 @@ def order(
 
 
 @app.command()
-def cancel(
-    username: str,
-    password: str,
-):
-    """Cancel one of your orders (explicit selection)."""
-    user = authenticate(username, password)
+def cancel(username: str, password: str):
+    """Cancel one of your orders."""
+    authenticate(username, password)
     orders = read_csv(ORDERS_FILE)
 
     owned = [o for o in orders if o["username"] == username]
@@ -166,7 +181,9 @@ def cancel(
 
     typer.echo("Your orders:")
     for i, o in enumerate(owned, 1):
-        typer.echo(f"{i}. {o['size']} at {o['order_time']} (ID {o['id']})")
+        typer.echo(
+            f"{i}. {o['size']} | {o['toppings']} | {o['order_time']} | ID {o['id']}"
+        )
 
     choice = typer.prompt("Select order number", type=int)
 
@@ -196,7 +213,9 @@ def list_orders(username: str, password: str):
         return
 
     for o in visible:
-        typer.echo(f"{o['username']} | {o['size']} | {o['order_time']} | {o['id']}")
+        typer.echo(
+            f"{o['username']} | {o['size']} | {o['toppings']} | {o['order_time']} | {o['id']}"
+        )
 
 
 # ------------------------------------------------------------------
