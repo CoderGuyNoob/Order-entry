@@ -1,8 +1,8 @@
 import csv
 import datetime
 import uuid
+from typing import List, Literal
 import typer
-from typing import Literal
 from zoneinfo import ZoneInfo
 from datetime import timedelta
 
@@ -18,27 +18,37 @@ ORDERS_FILE = "orders.csv"
 ACCOUNT_FIELDS = ["username", "password", "status"]
 ORDER_FIELDS = ["id", "username", "size", "toppings", "order_time", "order_delivery_time"]
 
-# Allowed toppings
-ALLOWED_TOPPINGS = ["pepperoni", "mushrooms", "onions", "olives", "cheese"]
+# ------------------------------------------------------------------
+# Literal Definitions & Validation Setup
+# ------------------------------------------------------------------
+
+SizeLiteral = Literal["small", "medium", "large"]
+ToppingLiteral = Literal["pepperoni", "mushrooms", "onions", "olives", "cheese"]
+ALLOWED_TOPPINGS_SET = {"pepperoni", "mushrooms", "onions", "olives", "cheese"}
+
+# Validation callback for toppings
+def validate_toppings(toppings: List[str]) -> List[str]:
+    for t in toppings:
+        if t not in ALLOWED_TOPPINGS_SET:
+            raise typer.BadParameter(f"Invalid topping '{t}'. Allowed: {', '.join(ALLOWED_TOPPINGS_SET)}")
+    return toppings
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 
-def read_csv(file: str) -> list[dict]:
+def read_csv(file: str) -> List[dict]:
     try:
         with open(file, newline="") as f:
             return list(csv.DictReader(f))
     except FileNotFoundError:
         return []
 
-
-def write_csv(file: str, fields: list[str], rows: list[dict]) -> None:
+def write_csv(file: str, fields: List[str], rows: List[dict]) -> None:
     with open(file, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
-
 
 def authenticate(username: str, password: str) -> dict:
     for acc in read_csv(ACCOUNTS_FILE):
@@ -46,7 +56,6 @@ def authenticate(username: str, password: str) -> dict:
             return acc
     typer.echo("❌ Invalid credentials")
     raise typer.Exit()
-
 
 # ------------------------------------------------------------------
 # Account Commands
@@ -56,7 +65,6 @@ def authenticate(username: str, password: str) -> dict:
 def create_account(username: str, password: str):
     """Create a USER account."""
     accounts = read_csv(ACCOUNTS_FILE)
-
     if any(a["username"] == username for a in accounts):
         typer.echo("❌ Username already exists")
         raise typer.Exit()
@@ -69,7 +77,6 @@ def create_account(username: str, password: str):
 
     write_csv(ACCOUNTS_FILE, ACCOUNT_FIELDS, accounts)
     typer.echo("✅ Account created")
-
 
 @app.command()
 def delete_account(username: str, password: str, target: str):
@@ -94,7 +101,6 @@ def delete_account(username: str, password: str, target: str):
     write_csv(ACCOUNTS_FILE, ACCOUNT_FIELDS, remaining)
     typer.echo(f"✅ Account '{target}' deleted")
 
-
 @app.command()
 def promote(admin_user: str, admin_pass: str, target: str):
     """Promote a USER to ADMIN (ADMIN only)."""
@@ -109,7 +115,6 @@ def promote(admin_user: str, admin_pass: str, target: str):
         raise typer.Exit()
 
     accounts = read_csv(ACCOUNTS_FILE)
-
     for acc in accounts:
         if acc["username"] == target:
             if acc["status"] == "ADMIN":
@@ -122,7 +127,6 @@ def promote(admin_user: str, admin_pass: str, target: str):
 
     typer.echo("❌ User not found")
 
-
 # ------------------------------------------------------------------
 # Order Commands
 # ------------------------------------------------------------------
@@ -131,38 +135,37 @@ def promote(admin_user: str, admin_pass: str, target: str):
 def order(
     username: str,
     password: str,
-    size: Literal["small", "medium", "large"] = "medium",
-    toppings: list[str] = typer.Option(
-        [],
+    toppings: List[str] = typer.Option(
+        None,
         "--toppings",
-        help=f"Repeatable toppings. Choose from: {', '.join(ALLOWED_TOPPINGS)}",
+        "-t",
+        help=f"Repeatable toppings. Choose from: {', '.join(ALLOWED_TOPPINGS_SET)}",
+        callback=validate_toppings,
+        show_default=False,
     ),
+    size: SizeLiteral = "medium",
 ):
     """Place an order."""
     authenticate(username, password)
-
-    # Validate toppings
-    for t in toppings:
-        if t not in ALLOWED_TOPPINGS:
-            typer.echo(f"❌ Invalid topping: {t}")
-            raise typer.Exit()
-
     orders = read_csv(ORDERS_FILE)
     now = datetime.datetime.now(ZoneInfo("America/New_York"))
+
+    if toppings is None:
+        toppings = []
+
+    toppings_str = ",".join(toppings) if toppings else "none"
 
     orders.append({
         "id": str(uuid.uuid4())[:8],
         "username": username,
         "size": size,
-        "toppings": ",".join(toppings) if toppings else "none",
+        "toppings": toppings_str,
         "order_time": now.strftime("%H:%M"),
         "order_delivery_time": (now + timedelta(minutes=20)).strftime("%H:%M")
     })
 
     write_csv(ORDERS_FILE, ORDER_FIELDS, orders)
-    toppings_display = ", ".join(toppings) if toppings else "None"
-    typer.echo(f"✅ Order placed: {size} pizza with {toppings_display}")
-
+    typer.echo(f"✅ Order placed: {size} pizza with {toppings_str}")
 
 @app.command()
 def cancel(username: str, password: str):
@@ -171,23 +174,19 @@ def cancel(username: str, password: str):
     orders = read_csv(ORDERS_FILE)
 
     owned = [o for o in orders if o["username"] == username]
-
     if not owned:
         typer.echo("❌ No orders found")
         raise typer.Exit()
 
     typer.echo("Your orders:")
     for i, o in enumerate(owned, 1):
-        toppings_display = (
-            ", ".join(o["toppings"].split(",")) if o["toppings"] != "none" else "None"
-        )
+        toppings_display = o["toppings"] if o["toppings"] != "none" else "None"
         typer.echo(
             f"{i}. {o['size']} | Toppings: {toppings_display} | "
             f"Delivery: {o['order_delivery_time']} | ID: {o['id']}"
         )
 
     choice = typer.prompt("Select order number", type=int)
-
     if not (1 <= choice <= len(owned)):
         typer.echo("❌ Invalid selection")
         raise typer.Exit()
@@ -197,7 +196,6 @@ def cancel(username: str, password: str):
 
     write_csv(ORDERS_FILE, ORDER_FIELDS, remaining)
     typer.echo("✅ Order cancelled")
-
 
 @app.command()
 def list_orders(username: str, password: str):
@@ -214,17 +212,14 @@ def list_orders(username: str, password: str):
         return
 
     for o in visible:
-        toppings_display = (
-            ", ".join(o["toppings"].split(",")) if o["toppings"] != "none" else "None"
-        )
+        toppings_display = o["toppings"] if o["toppings"] != "none" else "None"
         typer.echo(
             f"{o['username']} | {o['size']} | Toppings: {toppings_display} | "
             f"Ordered: {o['order_time']} | Delivery: {o['order_delivery_time']} | ID: {o['id']}"
         )
 
-
 # ------------------------------------------------------------------
-# Entry
+# Entry Point
 # ------------------------------------------------------------------
 
 if __name__ == "__main__":
